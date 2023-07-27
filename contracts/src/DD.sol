@@ -53,10 +53,26 @@ contract DD {
         emit SubmitDirectDeposit(_sender, nonce, _fallbackReceiver, zkAddress, _depositAmount);
     }
 
-    function completeDD(uint256[] calldata _indices) external {
-        for (uint256 i = 0; i < _indices.length; ++i) {
+    bytes4 internal constant MESSAGE_PREFIX_DIRECT_DEPOSIT_V1 = 0x00000001;
+
+    function completeDD(uint256[] calldata _indices) external returns(bytes memory message){
+        uint256 count = _indices.length;
+        message = new bytes(4 + count * (8 + 10 + 32 + 8));
+        assembly {
+            mstore(add(message, 32), or(shl(248, count), MESSAGE_PREFIX_DIRECT_DEPOSIT_V1))
+        }
+        for (uint256 i = 0; i < count; ++i) {
             uint256 index = _indices[i];
             DirectDeposit storage dd = directDeposits[index];
+            (bytes32 pk, bytes10 diversifier, uint64 deposit) = (dd.pk, dd.diversifier, dd.deposit);
+            assembly {
+                // bytes8(dd.index) ++ bytes10(dd.diversifier) ++ bytes32(dd.pk) ++ bytes8(dd.deposit)
+                let offset := mul(i, 58)
+                mstore(add(message, add(36, offset)), shl(192, index))
+                mstore(add(message, add(44, offset)), diversifier)
+                mstore(add(message, add(62, offset)), deposit)
+                mstore(add(message, add(54, offset)), pk)
+            }
             dd.status = DirectDepositStatus.Completed;
         }
         emit CompleteDirectDepositBatch(_indices);
